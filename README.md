@@ -1,36 +1,143 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pollitique
 
-## Getting Started
+A Next.js 14 application that provides real-time insights into French politics through Twitter follower tracking, polls, and media content analysis.
 
-First, run the development server:
+## Features
 
+- **Real-Time Twitter Data**: Live follower counts for 21 French presidential candidates using Twitter API v2
+- **Interactive Rankings Table**: Sortable table with expandable rows showing detailed candidate information
+- **Popularity Trends**: Historical popularity tracking with interactive charts
+- **Media Content**: Articles and videos related to French politics
+- **Candidate Profiles**: Detailed pages for each politician with biography, trends, and related content
+- **Responsive Design**: Mobile-first design with Tailwind CSS
+- **French Localization**: All content in French with proper date formatting
+
+## Tech Stack
+
+- **Framework**: Next.js 14 (App Router)
+- **Language**: TypeScript 5
+- **Styling**: Tailwind CSS 3
+- **Charts**: Recharts
+- **Icons**: Lucide React
+- **Date Handling**: date-fns with French locale
+- **API Integration**: Twitter API v2
+
+## Prerequisites
+
+- Node.js 18.17.0 or higher
+- npm or yarn
+- Twitter API Bearer Token (Free tier compatible)
+
+## Installation
+
+1. Clone the repository:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/kulisama81/Pollitique.git
+cd Pollitique
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Install dependencies:
+```bash
+npm install
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Set up environment variables:
+```bash
+cp .env.example .env.local
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Add your Twitter Bearer Token to `.env.local`:
+```env
+NEXT_PUBLIC_APP_URL=http://localhost:3020
+TWITTER_BEARER_TOKEN=your_bearer_token_here
+```
 
-## Learn More
+## Running the Application
 
-To learn more about Next.js, take a look at the following resources:
+### Development Mode
+```bash
+npm run dev
+```
+The application will be available at `http://localhost:3020`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Production Build
+```bash
+npm run build
+npm run start
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Project Structure
 
-## Deploy on Vercel
+```
+pollitique/
+├── app/                          # Next.js 14 App Router
+│   ├── api/                      # API routes
+│   │   ├── politicians/          # Politicians endpoints
+│   │   │   ├── live/             # Live Twitter data endpoint
+│   │   │   └── [id]/             # Individual politician data
+│   │   ├── articles/             # Articles endpoint
+│   │   └── videos/               # Videos endpoint
+│   ├── politicians/[id]/         # Dynamic politician pages
+│   └── page.tsx                  # Homepage
+├── components/
+│   ├── content/                  # Article and video components
+│   ├── data/                     # Data visualization components
+│   ├── politician/               # Politician-specific components
+│   └── shared/                   # Reusable UI components
+├── lib/
+│   ├── api/                      # API integration logic
+│   │   ├── twitter.ts            # Twitter API functions
+│   │   └── politicians.ts        # Politician data fetching
+│   └── data/                     # Mock data
+├── types/                        # TypeScript type definitions
+└── public/                       # Static assets
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Twitter API Integration
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The application uses Twitter API v2 to fetch real-time follower counts for French politicians. The integration is designed to work with the free tier:
+
+- **Endpoint Used**: `/users/by/username` (user lookup)
+- **Rate Limiting**: 500ms delay between requests
+- **Caching**: 30-minute revalidation
+- **Error Handling**: Graceful fallback to mock data when API fails
+
+### Current Politicians Tracked
+
+21 French presidential candidates including:
+- Emmanuel Macron
+- Marine Le Pen
+- Jean-Luc Mélenchon
+- Jordan Bardella
+- Édouard Philippe
+- And 16 others
+
+## Development Notes
+
+- Port configured to `3020` to avoid conflicts with other projects
+- Server Components by default for better performance
+- Client Components only where interactivity is needed
+- All dates formatted in French locale
+- Political party colors configured in Tailwind theme
+
+## Environment Variables
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `NEXT_PUBLIC_APP_URL` | Application URL | Yes |
+| `TWITTER_BEARER_TOKEN` | Twitter API Bearer Token | Yes |
+
+## Contributing
+
+1. Create a feature branch from `main`
+2. Follow the conventions in `CLAUDE.md`
+3. Commit with clear, descriptive messages
+4. Push and create a pull request
+
+## License
+
+This project is private and proprietary.
+
+## Contact
+
+For questions or issues, please open an issue on GitHub.
