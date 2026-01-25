@@ -48,62 +48,172 @@ Transform Pollitique from a simple follower tracker to a comprehensive multi-pla
 
 ## Implementation Strategy
 
+### Quick Start with Supabase (Do This First!)
+
+Since you already have Supabase set up, you can start immediately:
+
+1. **Open Supabase Dashboard** → Your project → SQL Editor
+2. **Copy the schema** from Phase 1 below and run it
+3. **Get your credentials** → Project Settings → API
+   - Project URL
+   - Anon/public key
+   - Service role key
+4. **Add to `.env.local`**:
+   ```bash
+   NEXT_PUBLIC_SUPABASE_URL=your_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+   SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+   ```
+5. **Install Supabase**: `npm install @supabase/supabase-js`
+6. **Start with Phase 1 below** ↓
+
+---
+
 ### Phase 1: Database & 6-Hour Caching (CRITICAL - Start Here)
 
 **Goal**: Add persistent storage, extend cache from 30 min to 6 hours
 
-**Database Choice**: SQLite for development → Vercel Postgres (free tier) for production
+**Database Choice**: Supabase PostgreSQL (you already have it set up!)
 
-**Schema**:
+**Why Supabase**:
+- ✅ Already familiar with it from other projects
+- ✅ PostgreSQL with 500 MB free tier
+- ✅ Auto-generated REST/GraphQL APIs
+- ✅ Real-time subscriptions (future: live UI updates)
+- ✅ Row Level Security for admin features
+- ✅ No migration needed - persistent from day 1
+
+**Schema** (Create in Supabase SQL Editor):
 ```sql
 -- Politicians table (baseline data)
 CREATE TABLE politicians (
   id TEXT PRIMARY KEY,
   full_name TEXT NOT NULL,
-  twitter_handle TEXT,
+  party TEXT,
+  position TEXT,
+  image_url TEXT,
+  twitter_handle TEXT UNIQUE,
   youtube_channel_id TEXT,
   tiktok_handle TEXT,
-  -- ... other fields
+  biography TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Historical snapshots (4 times daily)
 CREATE TABLE politician_snapshots (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  politician_id TEXT NOT NULL,
-  snapshot_date DATETIME NOT NULL,
-  twitter_followers INTEGER,
-  youtube_views_3d INTEGER,
-  tiktok_views_3d INTEGER,
-  trending_score REAL,
-  FOREIGN KEY (politician_id) REFERENCES politicians(id)
+  id SERIAL PRIMARY KEY,
+  politician_id TEXT NOT NULL REFERENCES politicians(id) ON DELETE CASCADE,
+  snapshot_date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  twitter_followers INTEGER DEFAULT 0,
+  youtube_views_3d INTEGER DEFAULT 0,
+  tiktok_views_3d INTEGER DEFAULT 0,
+  trending_score DECIMAL(5,2) DEFAULT 0,
+  trending_rank INTEGER,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(politician_id, snapshot_date)
 );
 
 -- Fast read cache
 CREATE TABLE politician_cache (
-  politician_id TEXT PRIMARY KEY,
-  current_twitter_followers INTEGER,
-  current_youtube_views_3d INTEGER,
-  current_tiktok_views_3d INTEGER,
-  follower_growth_rate REAL,
-  trending_score REAL,
+  politician_id TEXT PRIMARY KEY REFERENCES politicians(id) ON DELETE CASCADE,
+  current_twitter_followers INTEGER DEFAULT 0,
+  current_youtube_views_3d INTEGER DEFAULT 0,
+  current_tiktok_views_3d INTEGER DEFAULT 0,
+  follower_growth_rate DECIMAL(5,2) DEFAULT 0,
+  trending_score DECIMAL(5,2) DEFAULT 0,
   trending_rank INTEGER,
-  last_refresh DATETIME
+  last_refresh TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Indexes for performance
+CREATE INDEX idx_snapshots_date ON politician_snapshots(snapshot_date DESC);
+CREATE INDEX idx_snapshots_politician ON politician_snapshots(politician_id);
+CREATE INDEX idx_snapshots_score ON politician_snapshots(trending_score DESC);
+CREATE INDEX idx_cache_rank ON politician_cache(trending_rank ASC);
+
+-- Enable Row Level Security (optional, for admin features later)
+ALTER TABLE politicians ENABLE ROW LEVEL SECURITY;
+ALTER TABLE politician_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE politician_cache ENABLE ROW LEVEL SECURITY;
+
+-- Public read access (adjust based on your needs)
+CREATE POLICY "Public read access" ON politicians FOR SELECT USING (true);
+CREATE POLICY "Public read access" ON politician_snapshots FOR SELECT USING (true);
+CREATE POLICY "Public read access" ON politician_cache FOR SELECT USING (true);
 ```
 
+**Setup Steps**:
+1. Create tables in Supabase SQL Editor (run schema above)
+2. Get Supabase URL and anon key from project settings
+3. Get service role key for server-side operations
+
 **Files to Create**:
-- `/lib/db/sqlite.ts` - Database connection manager
-- `/lib/db/schema.sql` - Schema definition
-- `/lib/db/queries/politicians.ts` - Query functions
-- `/lib/db/queries/snapshots.ts` - Snapshot queries
+- `/lib/db/supabase.ts` - Supabase client instances (server & client)
+- `/lib/db/queries/politicians.ts` - Query functions using Supabase
+- `/lib/db/queries/snapshots.ts` - Snapshot queries using Supabase
+- `/lib/db/seed.ts` - Seed politicians from mock data
 
 **Files to Modify**:
 - `/app/api/politicians/live/route.ts`:
   - Change `export const revalidate = 1800` → `21600` (6 hours)
-  - Read from `politician_cache` table instead of calling APIs
+  - Read from `politician_cache` table via Supabase
   - Only refresh if cache older than 6 hours
-- `/package.json`: Add `better-sqlite3`
+- `/package.json`: Add `@supabase/supabase-js`
 - `/types/database.ts`: Add database types
+- `.env.example`: Add Supabase environment variables
+
+**Example Supabase Client Setup** (`/lib/db/supabase.ts`):
+```typescript
+import { createClient } from '@supabase/supabase-js'
+
+// Server-side client (uses service role key)
+export const supabaseServer = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!, // Has admin access
+  {
+    auth: {
+      persistSession: false
+    }
+  }
+)
+
+// Client-side client (uses anon key)
+export const supabaseClient = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+```
+
+**Example Query** (`/lib/db/queries/politicians.ts`):
+```typescript
+import { supabaseServer } from '@/lib/db/supabase'
+
+export async function getPoliticiansCache() {
+  const { data, error } = await supabaseServer
+    .from('politician_cache')
+    .select('*')
+    .order('trending_rank', { ascending: true })
+
+  if (error) throw error
+  return data
+}
+
+export async function updatePoliticianCache(
+  politicianId: string,
+  updates: Partial<PoliticianCache>
+) {
+  const { error } = await supabaseServer
+    .from('politician_cache')
+    .upsert({
+      politician_id: politicianId,
+      ...updates,
+      last_refresh: new Date().toISOString()
+    })
+
+  if (error) throw error
+}
+```
 
 **Verification**:
 - Page loads in <500ms (cached data)
@@ -295,7 +405,8 @@ function normalizeGrowth(rate: number): number {
 
 | File | Phase | Purpose |
 |------|-------|---------|
-| `/lib/db/sqlite.ts` | 1 | Database connection, core infrastructure |
+| `/lib/db/supabase.ts` | 1 | Supabase client setup, core infrastructure |
+| `/lib/db/queries/politicians.ts` | 1 | Database queries for politicians data |
 | `/app/api/politicians/live/route.ts` | 1 | API endpoint, 6-hour caching, DB reads |
 | `/lib/refresh/politician-refresh.ts` | 2 | Core refresh logic, orchestrates all updates |
 | `/lib/calculations/trending-score.ts` | 6 | Trending score algorithm |
@@ -355,10 +466,14 @@ Next user visit sees fresh data
 TWITTER_BEARER_TOKEN=your_token_here
 NEXT_PUBLIC_APP_URL=http://localhost:3020
 
-# New
+# Supabase (get from Supabase project settings)
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
+
+# New APIs
 YOUTUBE_API_KEY=your_youtube_key_here
 CRON_SECRET=random_secure_string_for_cron_auth
-DATABASE_URL=postgresql://... # For production (Vercel Postgres)
 
 # Optional (if using third-party TikTok service)
 TIKTOK_API_KEY=your_tiktok_key_here
@@ -367,35 +482,53 @@ TIKTOK_API_KEY=your_tiktok_key_here
 ## Deployment Notes
 
 ### Development
-- SQLite database in `/tmp` (recreated on changes)
+- Supabase database (same for dev and production)
 - Manual refresh for testing
 - All environment variables in `.env.local`
+- Run seed script once: `npm run db:seed`
 
 ### Production (Vercel)
-- Migrate to Vercel Postgres (free tier: 256 MB storage)
+- Same Supabase database (already persistent)
 - Enable cron jobs in `vercel.json`
 - Add all environment variables in Vercel dashboard
 - Monitor cron executions in Vercel logs
+- Monitor Supabase usage in Supabase dashboard
 
-### Migration Path
-1. Export SQLite data with script
-2. Create Vercel Postgres database
-3. Import data to Postgres
-4. Update `DATABASE_URL` in environment
-5. Verify cron jobs run successfully
+### Supabase Setup
+1. **Create Project**: Already done (you have Supabase)
+2. **Run Schema**: Copy SQL from plan, paste in Supabase SQL Editor
+3. **Seed Data**: Run `/lib/db/seed.ts` to populate politicians table
+4. **Get Credentials**: Project Settings → API
+   - Copy project URL
+   - Copy anon/public key
+   - Copy service_role key (keep secret!)
+5. **Add to .env.local**: Paste all credentials
+
+### No Migration Needed
+- Supabase is persistent from day 1
+- No SQLite to Postgres migration
+- Development and production use same database
 
 ## Budget
 
 ### Required Costs
-- **Vercel Postgres**: $0 (free tier sufficient)
+- **Supabase**: $0 (free tier: 500 MB database, 2 GB bandwidth)
 - **YouTube API**: $0 (free tier: 10,000 units/day)
 - **Hosting**: $0 (Vercel free tier)
 
 ### Optional Costs
 - **Twitter Basic API**: $100/month (if adding mentions/retweets later)
 - **Vercel Pro**: $20/month (better cron reliability, not required)
+- **Supabase Pro**: $25/month (only if exceeding free tier limits)
 
 **Total**: $0/month minimum, $100-120/month for full Twitter integration
+
+**Supabase Free Tier Limits**:
+- 500 MB database storage (plenty for this project)
+- 2 GB bandwidth/month
+- 50,000 monthly active users
+- Unlimited API requests
+- You're well within limits!
 
 ## Future Enhancements (Post-MVP)
 
@@ -470,10 +603,10 @@ Can implement in stages:
 
 ## Critical Success Factors
 
-1. ✅ Database persists data (use Vercel Postgres in production)
+1. ✅ Database persists data (Supabase handles this automatically)
 2. ✅ Cron jobs run reliably every 6 hours
 3. ✅ API errors don't break UI (fallback to cache)
-4. ✅ 6-hour cache works (ISR + database)
+4. ✅ 6-hour cache works (ISR + Supabase)
 5. ✅ User sees data freshness (last refresh timestamp)
 6. ✅ Page loads fast (<500ms with cache)
 7. ✅ Trending score accurately reflects multi-platform engagement
